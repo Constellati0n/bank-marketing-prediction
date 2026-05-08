@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+*.egg
+.ipynb_checkpoints/
+
+output/
+
+*.doc
+*.docx
+*.pptx
+*.pdf
+~$*
