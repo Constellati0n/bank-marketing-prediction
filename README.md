@@ -1,5 +1,7 @@
 # Bank Marketing Subscription Prediction
 
+English | [中文](README_zh.md)
+
 Predict whether a bank client will subscribe to a term deposit based on phone marketing campaign data, using LightGBM with 5-fold stratified cross-validation.
 
 ## Dataset
