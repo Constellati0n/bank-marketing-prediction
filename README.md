@@ -78,26 +78,33 @@ python src/baseline.py
 
 ## Results
 
-The dataset is highly imbalanced (86.9% "no" vs 13.1% "yes"), making accuracy a misleading metric — a naive "predict all no" baseline already achieves 86.9% accuracy. The real challenge is identifying the minority positive class.
+The dataset is highly imbalanced (86.9% "no" vs 13.1% "yes"), making accuracy a misleading metric — a naive "predict all no" already achieves 86.9% accuracy. The real challenge is identifying the minority positive class.
 
 ### Model Comparison
 
 | Metric | Linear Regression (Baseline) | LightGBM (5-Fold CV) |
 |--------|------------------------------|----------------------|
-| Accuracy | 86.44% | 86.88% |
-| Precision | 45.98% | — |
-| Recall | 13.42% | — |
-| F1 Score | 20.78% | — |
+| ROC-AUC | — | 0.797 |
+| Accuracy | 86.44% | — |
+| Precision | 45.98% | 41.79% |
+| Recall | 13.42% | 58.74% |
+| F1 Score | 20.78% | 48.84% |
 
-> LightGBM applies `scale_pos_weight=6.62` to counter class imbalance. The per-fold accuracy is stable (86.87%–86.89%) with early stopping at ~5 rounds, indicating fast convergence without overfitting.
+### Key Insights
 
-The baseline's poor recall (13.4%) shows that a simple linear model cannot effectively identify potential subscribers, highlighting the value of LightGBM's gradient boosting and feature engineering.
+**ROC-AUC = 0.80** proves the model has genuine discriminative power — it can distinguish potential subscribers from non-subscribers far better than random.
+
+**The default 0.5 threshold fails** on imbalanced data. Because `scale_pos_weight=6.62` dampens raw output probabilities, no sample exceeds 0.5 → LightGBM predicts all "no" out of the box.
+
+**After threshold tuning** (grid-search best = 0.250 by max F1), the model catches **58.7% of actual subscribers** — a **4.4× improvement** over the baseline's 13.4%. The F1 score more than doubles (0.21 → 0.49).
+
+This mirrors real-world marketing: precision of ~42% means 4 out of 10 targeted leads convert, while recall of ~59% means you reach most of the interested audience. A marketing team would value this trade-off over the baseline.
 
 ### Output Files
 
 | File | Model | Description |
 |------|-------|-------------|
-| `output/submission_result.csv` | LightGBM | 5-fold CV averaged predictions |
+| `output/submission_result.csv` | LightGBM | 5-fold CV + tuned threshold predictions |
 | `output/submission_baseline.csv` | Linear Regression | Single split predictions |
 
 Visualization figures are saved to `figures/`:

@@ -9,7 +9,8 @@ from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import StratifiedKFold
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.metrics import roc_auc_score, confusion_matrix, classification_report
 from sklearn.impute import SimpleImputer
 import lightgbm as lgb
 import warnings
@@ -163,8 +164,47 @@ def train_and_predict(train, test, submission):
     oof_acc = accuracy_score(y, (oof_preds > 0.5).astype(int))
     print(f"\nOverall OOF Accuracy: {oof_acc:.4f}")
 
+    oof_binary = (oof_preds > 0.5).astype(int)
+    precision = precision_score(y, oof_binary)
+    recall = recall_score(y, oof_binary)
+    f1 = f1_score(y, oof_binary)
+    roc_auc = roc_auc_score(y, oof_preds)
+    cm = confusion_matrix(y, oof_binary)
+    tn, fp, fn, tp = cm.ravel()
+
+    print("\n========== LightGBM - 5-Fold CV Evaluation ==========")
+    print(f"ROC-AUC       : {roc_auc:.4f}")
+    print(f"Precision     : {precision:.4f}")
+    print(f"Recall        : {recall:.4f}")
+    print(f"F1 Score      : {f1:.4f}")
+    print(f"Accuracy      : {oof_acc:.4f}  (naive all-no: 86.88%)")
+    print(f"Confusion Matrix: TN={tn}, FP={fp}, FN={fn}, TP={tp}")
+    print(f"Lift over naive: Recall shows we catch {recall*100:.1f}% of actual subscribers")
+    print("========================================================")
+
+    thresholds = np.linspace(0.05, 0.95, 91)
+    best_thresh = 0.5
+    best_f1 = 0
+    for t in thresholds:
+        f1_t = f1_score(y, (oof_preds > t).astype(int))
+        if f1_t > best_f1:
+            best_f1 = f1_t
+            best_thresh = t
+
+    oof_tuned = (oof_preds > best_thresh).astype(int)
+    t_prec = precision_score(y, oof_tuned)
+    t_rec = recall_score(y, oof_tuned)
+    t_f1 = f1_score(y, oof_tuned)
+    t_cm = confusion_matrix(y, oof_tuned)
+
+    print(f"\n--- After Threshold Tuning (best={best_thresh:.3f}, max F1) ---")
+    print(f"Precision     : {t_prec:.4f}")
+    print(f"Recall        : {t_rec:.4f}")
+    print(f"F1 Score      : {t_f1:.4f}")
+    print(f"Confusion Matrix: {t_cm.ravel()}")
+
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    submission['subscribe'] = (test_preds > 0.5).astype(int)
+    submission['subscribe'] = (test_preds > best_thresh).astype(int)
     submission['subscribe'] = submission['subscribe'].map({0: 'no', 1: 'yes'})
     output_path = os.path.join(OUTPUT_DIR, 'submission_result.csv')
     submission.to_csv(output_path, index=False)
