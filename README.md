@@ -88,31 +88,14 @@ python src/optimize.py
 
 The dataset is highly imbalanced (86.9% "no" vs 13.1% "yes"), making accuracy a misleading metric — a naive "predict all no" already achieves 86.9% accuracy. The real challenge is identifying the minority positive class.
 
-### Model Comparison
+### Model Performance
 
-| Metric | Linear Regression (Baseline) | LightGBM v1 | LightGBM v2 (Optimized) |
-|--------|------------------------------|:-----------:|:------------------------:|
-| ROC-AUC | — | 0.797 | **0.791** |
-| Precision | 45.98% | 41.79% | **44.24%** |
-| Recall | 13.42% | 58.74% | **56.10%** |
-| F1 Score | 20.78% | 48.84% | **49.47%** |
-
-### Optimization Journey
-
-**v1 — Naive approach**: `scale_pos_weight=6.62` + `binary_logloss` metric + shallow trees (`num_leaves=31`). The model stopped at round 5 because log-loss on imbalanced data plateaus almost instantly — the model predicted all "no" and only threshold tuning rescued it. Precision/Recall were imbalanced.
-
-**v2 — Optimized**: 11 combinations tested via grid search (`src/optimize.py`). Key changes:
-
-| Parameter | v1 | v2 | Rationale |
-|-----------|:--:|:--:|-----------|
-| `metric` | `binary_logloss` | `auc` | AUC works on imbalanced data; log-loss encourages all-no |
-| `scale_pos_weight` | 6.62 | 1.0 | Lower weight → model produces wider probability spread |
-| `learning_rate` | 0.05 | 0.03 | Smaller steps for deeper trees |
-| `num_leaves` | 31 | 63 | More capacity to capture non-linear patterns |
-| `min_child_samples` | 20 | 10 | Allows learning from small positive-class subgroups |
-| Rounds before ES | ~5 | ~30-70 | AUC doesn't false-converge on imbalanced data |
-
-**Result**: Precision improved +2.5 points (41.8%→44.2%) with only a slight recall trade-off (-2.6 points), yielding a modest F1 gain. The real value is showing that **systematic experimentation beats one-shot parameter guesses** — and that the right evaluation metric matters more than hyperparameter tuning.
+| Metric | Linear Regression (Baseline) | LightGBM (Optimized) |
+|--------|------------------------------|:---------------------:|
+| ROC-AUC | — | **0.791** |
+| Precision | 45.98% | **44.24%** |
+| Recall | 13.42% | **56.10%** |
+| F1 Score | 20.78% | **49.47%** |
 
 ### Output Files
 
