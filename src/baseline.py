@@ -1,6 +1,9 @@
 """
 Bank Marketing Subscription Prediction - Baseline Model
 Linear Regression + Visualization (Confusion Matrix, PR Curve, Feature Importance)
+
+The baseline uses the same raw features as the main LightGBM model but no
+custom feature engineering, to provide a fair lower-bound comparison.
 """
 
 import pandas as pd
@@ -8,6 +11,8 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import (mean_squared_error, r2_score, accuracy_score,
                              precision_recall_curve, average_precision_score,
@@ -28,36 +33,43 @@ def load_and_preprocess_data():
     train = pd.read_csv(os.path.join(DATA_DIR, 'train.csv'))
     test = pd.read_csv(os.path.join(DATA_DIR, 'test.csv'))
 
-    if 'id' in test.columns:
-        submission_ids = test['id']
-    else:
-        submission_ids = test.index
+    submission_ids = test['id'] if 'id' in test.columns else test.index
 
     train['subscribe'] = train['subscribe'].map({'yes': 1, 'no': 0})
 
-    possible_numeric_features = [
-        'age', 'duration', 'campaign', 'pdays', 'previous',
+    numeric_features = [
+        'age', 'campaign', 'pdays', 'previous',
         'emp_var_rate', 'cons_price_index', 'cons_conf_index',
         'lending_rate3m', 'nr_employed'
     ]
 
-    categorical_features = ['job', 'marital', 'default', 'housing', 'contact',
-                            'month', 'day_of_week', 'poutcome']
-
-    numeric_features = [col for col in possible_numeric_features if col in train.columns]
+    categorical_features = ['job', 'marital', 'education', 'default',
+                            'housing', 'loan', 'contact', 'poutcome',
+                            'month', 'day_of_week']
 
     print("Numeric features:", numeric_features)
     print("Categorical features:", categorical_features)
 
     for df in [train, test]:
         if 'pdays' in df.columns:
-            df['pdays'] = df['pdays'].replace(999, -1)
+            df.loc[df['pdays'] == 999, 'pdays'] = np.nan
+        for col in categorical_features:
+            if col in df.columns:
+                df[col] = df[col].replace('unknown', np.nan)
+                df[col] = df[col].replace('other', np.nan)
+
+    numeric_transformer = Pipeline(steps=[
+        ('imputer', SimpleImputer(strategy='median')),
+        ('scaler', StandardScaler())])
+
+    categorical_transformer = Pipeline(steps=[
+        ('imputer', SimpleImputer(strategy='most_frequent')),
+        ('onehot', OneHotEncoder(handle_unknown='ignore', sparse_output=False))])
 
     preprocessor = ColumnTransformer(
         transformers=[
-            ('num', StandardScaler(), numeric_features),
-            ('cat', OneHotEncoder(handle_unknown='ignore', sparse_output=False), categorical_features)
-        ])
+            ('num', numeric_transformer, numeric_features),
+            ('cat', categorical_transformer, categorical_features)])
 
     X_train = train.drop('subscribe', axis=1)
     y_train = train['subscribe']
@@ -86,11 +98,11 @@ def train_and_evaluate(X_train, y_train):
 
     mse = mean_squared_error(y_val, y_pred)
     r2 = r2_score(y_val, y_pred)
-    accuracy = accuracy_score(y_val, y_pred_class)
+    acc = accuracy_score(y_val, y_pred_class)
 
     print(f"Validation MSE: {mse:.4f}")
     print(f"Validation R2: {r2:.4f}")
-    print(f"Validation Accuracy: {accuracy:.4f}")
+    print(f"Validation Accuracy: {acc:.4f}")
 
     return model, X_val, y_val, y_pred, y_pred_class
 
@@ -108,7 +120,8 @@ def visualize_model(model, feature_names, X_val, y_val, y_pred, y_pred_class):
     top_features = feature_importance.sort_values('Absolute_Value', ascending=False).head(20)
 
     plt.figure(figsize=(12, 10))
-    sns.barplot(x='Coefficient', y='Feature', data=top_features.sort_values('Coefficient', ascending=False))
+    sns.barplot(x='Coefficient', y='Feature',
+                data=top_features.sort_values('Coefficient', ascending=False))
     plt.title('Top 20 Feature Importances')
     plt.xlabel('Coefficient')
     plt.ylabel('Feature')
@@ -117,8 +130,8 @@ def visualize_model(model, feature_names, X_val, y_val, y_pred, y_pred_class):
     plt.close()
 
     plt.figure(figsize=(10, 6))
-    residuals = y_val - model.predict(X_val)
-    sns.scatterplot(x=model.predict(X_val), y=residuals)
+    residuals = y_val - y_pred
+    sns.scatterplot(x=y_pred, y=residuals)
     plt.axhline(y=0, color='r', linestyle='--')
     plt.title('Residual Plot')
     plt.xlabel('Predicted Value')
@@ -127,7 +140,7 @@ def visualize_model(model, feature_names, X_val, y_val, y_pred, y_pred_class):
     plt.close()
 
     plt.figure(figsize=(10, 6))
-    sns.histplot(model.predict(X_val), bins=30, kde=True)
+    sns.histplot(y_pred, bins=30, kde=True)
     plt.axvline(0.5, color='r', linestyle='--', label='Decision Threshold')
     plt.title('Prediction Distribution')
     plt.xlabel('Predicted Value')
@@ -139,7 +152,8 @@ def visualize_model(model, feature_names, X_val, y_val, y_pred, y_pred_class):
     average_precision = average_precision_score(y_val, y_pred)
 
     plt.figure(figsize=(10, 6))
-    plt.plot(recall, precision, lw=2, color='navy', label=f'PR Curve (AP={average_precision:.2f})')
+    plt.plot(recall, precision, lw=2, color='navy',
+             label=f'PR Curve (AP={average_precision:.2f})')
     plt.fill_between(recall, precision, alpha=0.2, color='navy')
     plt.xlabel('Recall')
     plt.ylabel('Precision')

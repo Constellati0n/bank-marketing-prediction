@@ -78,14 +78,29 @@ python src/baseline.py
 
 ## Results
 
-Output files are saved to `output/`:
+The dataset is highly imbalanced (86.9% "no" vs 13.1% "yes"), making accuracy a misleading metric — a naive "predict all no" baseline already achieves 86.9% accuracy. The real challenge is identifying the minority positive class.
+
+### Model Comparison
+
+| Metric | Linear Regression (Baseline) | LightGBM (5-Fold CV) |
+|--------|------------------------------|----------------------|
+| Accuracy | 86.44% | 86.88% |
+| Precision | 45.98% | — |
+| Recall | 13.42% | — |
+| F1 Score | 20.78% | — |
+
+> LightGBM applies `scale_pos_weight=6.62` to counter class imbalance. The per-fold accuracy is stable (86.87%–86.89%) with early stopping at ~5 rounds, indicating fast convergence without overfitting.
+
+The baseline's poor recall (13.4%) shows that a simple linear model cannot effectively identify potential subscribers, highlighting the value of LightGBM's gradient boosting and feature engineering.
+
+### Output Files
 
 | File | Model | Description |
 |------|-------|-------------|
-| `submission_result.csv` | LightGBM | 5-fold CV averaged predictions |
-| `submission_baseline.csv` | Linear Regression | Single split predictions |
+| `output/submission_result.csv` | LightGBM | 5-fold CV averaged predictions |
+| `output/submission_baseline.csv` | Linear Regression | Single split predictions |
 
-Visualization figures are saved to `figures/`.
+Visualization figures are saved to `figures/`:
 
 ## Tech Stack
 
