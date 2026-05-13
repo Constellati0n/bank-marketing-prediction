@@ -27,8 +27,11 @@
 ```
 bank-marketing-prediction/
 ├── src/
-│   ├── main.py           # LightGBM 主模型流程
-│   └── baseline.py       # 线性回归基线 + 可视化
+│   ├── main.py           # LightGBM 主模型流程（已优化）
+│   ├── baseline.py       # 线性回归基线 + 可视化
+│   └── optimize.py       # 超参数网格搜索（11 组配置）
+├── notebooks/
+│   └── eda.ipynb         # 探索性数据分析
 ├── data/                 # 数据集
 ├── figures/              # 可视化图表
 ├── output/               # 预测结果
@@ -54,8 +57,10 @@ bank-marketing-prediction/
 
 ### 主模型：LightGBM
 
-- 5 折分层交叉验证 + 早停（patience=50）
-- 通过 `scale_pos_weight` 处理类别不平衡
+- **参数已优化**（通过 `src/optimize.py` 对 11 组配置进行网格搜索）
+- 5 折分层交叉验证 + AUC 早停（patience=30）
+- `scale_pos_weight=1.0` — 保留自然概率分布，不平衡通过阈值调优处理
+- 深层树：`num_leaves=63`、`learning_rate=0.03`、`min_child_samples=10`
 - 预处理管道：`SimpleImputer` + `StandardScaler`（数值特征）、`SimpleImputer` + `OneHotEncoder`（分类特征）
 
 ### 基线模型：线性回归
@@ -74,6 +79,9 @@ python src/main.py
 
 # 运行基线模型 + 可视化
 python src/baseline.py
+
+# 运行超参数搜索（11 种配置）
+python src/optimize.py
 ```
 
 ## 模型评估
@@ -82,30 +90,37 @@ python src/baseline.py
 
 ### 模型对比
 
-| 指标 | 线性回归（基线） | LightGBM（5 折 CV） |
-|------|------------------|---------------------|
-| ROC-AUC | — | 0.797 |
-| 准确率 (Accuracy) | 86.44% | — |
-| 精确率 (Precision) | 45.98% | 41.79% |
-| 召回率 (Recall) | 13.42% | 58.74% |
-| F1 分数 | 20.78% | 48.84% |
+| 指标 | 线性回归（基线） | LightGBM v1 | LightGBM v2（优化后） |
+|------|------------------|:-----------:|:---------------------:|
+| ROC-AUC | — | 0.797 | **0.791** |
+| 精确率 (Precision) | 45.98% | 41.79% | **44.24%** |
+| 召回率 (Recall) | 13.42% | 58.74% | **56.10%** |
+| F1 分数 | 20.78% | 48.84% | **49.47%** |
 
-### 关键解读
+### 优化历程
 
-**ROC-AUC = 0.80** 证明模型具备真实的区分能力——它能比随机猜测好得多地识别潜在订阅客户。
+**v1 — 初始方案**：`scale_pos_weight=6.62` + `binary_logloss` 评估指标 + 浅层树（`num_leaves=31`）。模型在第 5 轮即早停——因为 log-loss 在不平衡数据上几乎瞬时收敛，模型默认判全 "no"，全靠阈值调优才挽救回来。
 
-**默认 0.5 阈值在不平衡数据上失效**。由于 `scale_pos_weight=6.62` 压低了原始输出概率，没有样本超过 0.5 → LightGBM 默认全判 "no"。
+**v2 — 优化后**：通过 `src/optimize.py` 对 11 组参数进行网格搜索。关键改动：
 
-**阈值调优后**（网格搜索最优阈值 = 0.250，以 F1 最大化为目标），模型成功捕获 **58.7% 的真实订阅客户**——是基线模型 13.4% 的 **4.4 倍**。F1 分数翻倍以上（0.21 → 0.49）。
+| 参数 | v1 | v2 | 优化理由 |
+|------|:--:|:--:|----------|
+| `metric` | `binary_logloss` | `auc` | AUC 对不平衡数据更有效；log-loss 倾向全判 no |
+| `scale_pos_weight` | 6.62 | 1.0 | 降低权重使模型输出更宽的概率分布 |
+| `learning_rate` | 0.05 | 0.03 | 深层树需要更小的步长 |
+| `num_leaves` | 31 | 63 | 更大容量捕捉非线性模式 |
+| `min_child_samples` | 20 | 10 | 允许从少数类小样本组中学习 |
+| 早停轮数 | ~5 | ~30-70 | AUC 不会在不平衡数据上假收敛 |
 
-这对应真实营销场景：~42% 的精确率意味着每 10 个被标记的客户中有 4 个会转化，~59% 的召回率意味着覆盖了大多数潜在客户。营销团队会更看重这种折衷而非基线模型。
+**优化效果**：精确率提升 +2.5 个百分点（41.8% → 44.2%），召回率仅损失 -2.6 个百分点，F1 略有提升。真正的价值在于：系统化的实验比一次性的参数猜测更有效——而且正确的评估指标比调参本身更重要。
 
 ### 输出文件
 
 | 文件 | 模型 | 说明 |
 |------|------|------|
-| `output/submission_result.csv` | LightGBM | 5 折交叉验证 + 阈值调优预测 |
+| `output/submission_result.csv` | LightGBM（优化后）| 5 折交叉验证 + 阈值调优 |
 | `output/submission_baseline.csv` | 线性回归 | 单次划分预测 |
+| `output/submission_optimized.csv` | LightGBM（最优组合）| `src/optimize.py` 网格搜索结果 |
 
 可视化图表保存至 `figures/`：
 

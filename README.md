@@ -27,8 +27,11 @@ Based on the [UCI Bank Marketing Dataset](https://archive.ics.uci.edu/ml/dataset
 ```
 bank-marketing-prediction/
 ├── src/
-│   ├── main.py           # LightGBM pipeline (main model)
-│   └── baseline.py       # Linear Regression baseline + visualization
+│   ├── main.py           # LightGBM pipeline (optimized)
+│   ├── baseline.py       # Linear Regression baseline + visualization
+│   └── optimize.py       # Hyperparameter grid search (11 configs)
+├── notebooks/
+│   └── eda.ipynb         # Exploratory Data Analysis
 ├── data/                 # Dataset files
 ├── figures/              # Generated visualizations
 ├── output/               # Prediction results
@@ -54,8 +57,10 @@ bank-marketing-prediction/
 
 ### Main Model: LightGBM
 
-- 5-fold stratified cross-validation with early stopping (patience=50)
-- Class imbalance handled via `scale_pos_weight`
+- **Optimized parameters** (via `src/optimize.py` grid search over 11 configs)
+- 5-fold stratified cross-validation + AUC-based early stopping (patience=30)
+- `scale_pos_weight=1.0` — allows natural probability spread; imbalance handled by threshold tuning
+- Deeper trees: `num_leaves=63`, `learning_rate=0.03`, `min_child_samples=10`
 - Preprocessing pipeline: `SimpleImputer` + `StandardScaler` (numeric), `SimpleImputer` + `OneHotEncoder` (categorical)
 
 ### Baseline: Linear Regression
@@ -74,6 +79,9 @@ python src/main.py
 
 # Run baseline model + visualization
 python src/baseline.py
+
+# Run hyperparameter search (11 configs)
+python src/optimize.py
 ```
 
 ## Results
@@ -82,30 +90,37 @@ The dataset is highly imbalanced (86.9% "no" vs 13.1% "yes"), making accuracy a 
 
 ### Model Comparison
 
-| Metric | Linear Regression (Baseline) | LightGBM (5-Fold CV) |
-|--------|------------------------------|----------------------|
-| ROC-AUC | — | 0.797 |
-| Accuracy | 86.44% | — |
-| Precision | 45.98% | 41.79% |
-| Recall | 13.42% | 58.74% |
-| F1 Score | 20.78% | 48.84% |
+| Metric | Linear Regression (Baseline) | LightGBM v1 | LightGBM v2 (Optimized) |
+|--------|------------------------------|:-----------:|:------------------------:|
+| ROC-AUC | — | 0.797 | **0.791** |
+| Precision | 45.98% | 41.79% | **44.24%** |
+| Recall | 13.42% | 58.74% | **56.10%** |
+| F1 Score | 20.78% | 48.84% | **49.47%** |
 
-### Key Insights
+### Optimization Journey
 
-**ROC-AUC = 0.80** proves the model has genuine discriminative power — it can distinguish potential subscribers from non-subscribers far better than random.
+**v1 — Naive approach**: `scale_pos_weight=6.62` + `binary_logloss` metric + shallow trees (`num_leaves=31`). The model stopped at round 5 because log-loss on imbalanced data plateaus almost instantly — the model predicted all "no" and only threshold tuning rescued it. Precision/Recall were imbalanced.
 
-**The default 0.5 threshold fails** on imbalanced data. Because `scale_pos_weight=6.62` dampens raw output probabilities, no sample exceeds 0.5 → LightGBM predicts all "no" out of the box.
+**v2 — Optimized**: 11 combinations tested via grid search (`src/optimize.py`). Key changes:
 
-**After threshold tuning** (grid-search best = 0.250 by max F1), the model catches **58.7% of actual subscribers** — a **4.4× improvement** over the baseline's 13.4%. The F1 score more than doubles (0.21 → 0.49).
+| Parameter | v1 | v2 | Rationale |
+|-----------|:--:|:--:|-----------|
+| `metric` | `binary_logloss` | `auc` | AUC works on imbalanced data; log-loss encourages all-no |
+| `scale_pos_weight` | 6.62 | 1.0 | Lower weight → model produces wider probability spread |
+| `learning_rate` | 0.05 | 0.03 | Smaller steps for deeper trees |
+| `num_leaves` | 31 | 63 | More capacity to capture non-linear patterns |
+| `min_child_samples` | 20 | 10 | Allows learning from small positive-class subgroups |
+| Rounds before ES | ~5 | ~30-70 | AUC doesn't false-converge on imbalanced data |
 
-This mirrors real-world marketing: precision of ~42% means 4 out of 10 targeted leads convert, while recall of ~59% means you reach most of the interested audience. A marketing team would value this trade-off over the baseline.
+**Result**: Precision improved +2.5 points (41.8%→44.2%) with only a slight recall trade-off (-2.6 points), yielding a modest F1 gain. The real value is showing that **systematic experimentation beats one-shot parameter guesses** — and that the right evaluation metric matters more than hyperparameter tuning.
 
 ### Output Files
 
 | File | Model | Description |
 |------|-------|-------------|
-| `output/submission_result.csv` | LightGBM | 5-fold CV + tuned threshold predictions |
+| `output/submission_result.csv` | LightGBM (Optimized) | 5-fold CV + tuned threshold |
 | `output/submission_baseline.csv` | Linear Regression | Single split predictions |
+| `output/submission_optimized.csv` | LightGBM (Best trial) | From `src/optimize.py` grid search |
 
 Visualization figures are saved to `figures/`:
 

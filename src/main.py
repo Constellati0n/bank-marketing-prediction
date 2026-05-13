@@ -110,21 +110,22 @@ def train_and_predict(train, test, submission):
     X_test = test.drop(columns=['id'])
 
     pos_weight = np.sum(y == 0) / np.sum(y == 1)
-    print(f"Positive sample weight: {pos_weight:.2f}")
+    print(f"Class ratio: 1:{pos_weight:.2f}")
+    print(f"(Using scale_pos_weight=1.0 — threshold tuning handles imbalance instead)")
 
     preprocessor = create_preprocessing_pipeline()
 
     params = {
         'objective': 'binary',
         'boosting_type': 'gbdt',
-        'metric': 'binary_logloss',
-        'learning_rate': 0.05,
-        'num_leaves': 31,
-        'min_child_samples': 20,
-        'feature_fraction': 0.8,
-        'bagging_fraction': 0.8,
+        'metric': 'auc',
+        'learning_rate': 0.03,
+        'num_leaves': 63,
+        'min_child_samples': 10,
+        'feature_fraction': 0.75,
+        'bagging_fraction': 0.75,
         'bagging_freq': 5,
-        'scale_pos_weight': pos_weight,
+        'scale_pos_weight': 1.0,
         'seed': 42,
         'verbose': -1
     }
@@ -149,9 +150,9 @@ def train_and_predict(train, test, submission):
         model = lgb.train(
             params,
             train_set,
-            num_boost_round=1000,
+            num_boost_round=1500,
             valid_sets=[train_set, valid_set],
-            callbacks=[lgb.early_stopping(50)]
+            callbacks=[lgb.early_stopping(30)]
         )
 
         oof_preds[valid_idx] = model.predict(X_valid_processed)
